@@ -1,0 +1,237 @@
+\documentclass[a4paper,11pt,fleqn]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=3.5cm]{geometry}
+\usepackage[section]{placeins}
+\usepackage[english]{babel}
+\usepackage[parfill]{parskip}
+\usepackage{bm}
+\usepackage{amsmath}
+\usepackage{float}
+
+\begin{document}
+
+<<knitr_option, cache=FALSE, echo=FALSE, results='hide'>>=
+library(knitr)
+
+## set global chunk options
+opts_chunk$set(echo=FALSE, fig.align='center',fig.show="asis", out.width="0.95\\textwidth",  par=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=55), warning=FALSE, error=FALSE)
+
+@
+
+<<R_lab,warning=FALSE, results='hide', echo=FALSE>>= 
+#####
+# Libraries 
+#####
+library("RColorBrewer")
+library(plotrix)
+library(graphics)
+library(ggplot2)
+library(MGLM)
+library(xtable)
+library(mvtnorm)
+library(combinat)
+@ 
+<<Data>>=
+source('Data i.o.R')
+@
+
+The recommendation of the vaccine in 2009 seemed to have caused a decrease in the reported cases among young children and infants. With the reduced amount of age-groups, presented in Figure \ref{fig:BoxPlots} on page \pageref{redGroups}, we have five different age-groups which will be used in the fitting procedure. 
+
+When fitting, we use the covariates time (t) and two harmonic components $\sin(\frac{2\pi}{12}\cdot t)$ and $\cos(\frac{2\pi}{12}\cdot t)$, in order to capture periodicity. Figure \ref{fig:MonthPlots} on page \pageref{fig:MonthPlots}, showed strong seasonal variation. The two harmonic components will not be able to capture this seasonal variation but no further attention will be put onto variable selection as it is not included in the aim of this thesis. 
+
+The design matrix  has the following appearance , $\bm{x}_t=(1, t, \sin(\frac{2\pi}{12}\cdot t), \cos(\frac{2\pi}{12}\cdot t))$, $1\leq t \leq 144$, and parameter vector $\bm{\beta}_j = (\beta_{j0},\beta_{j1},\beta_{j2},\beta_{j3})$ where $\beta_{j0}$ represents the intercept. The linear covariate will set the primary development of the fitted mean values as the harmonic components are periodic, taking values in the interval $[-1,1]$.
+
+\section{Data analysis using the multinomial logit regression}
+The multinomial logit regression model sets one category to the baseline category. With the last category as the baseline, i.e. category ''70+'', we have the multinomial logit regression model 
+\begin{equation}
+\log \left( \frac{\pi_j(\bm{x}_t)}{\pi_{70+}(\bm{x}_t)} \right) = \beta_{j0}+ \beta_{j1} t+ \beta_{j2} \sin \left( \frac{2\pi}{12}\cdot t \right)+ \beta_{j3} \cos \left(\frac{2\pi}{12}\cdot t \right),
+\end{equation}
+where $ 1\leq j \leq 4$. All interpretation of regression coefficient and models are done in comparison to the ''70+'' category. 
+
+Using the \textbf{MGLM} package  \citep{MGLM} we fit the multinomial logit regression, as follows
+
+<<Multinom_reg, echo=1:2, results = 'asis', out.width=6>>=
+Multinom_mod <- MGLMreg(as.matrix(RotaVirusBB[,agNames])~t+sin+cos,
+        data=RotaVirusBB, dist="MN") 
+
+test <- do.call("cbind", list(Multinom_mod$coeff,Multinom_mod$test))
+xtable(test, align=c("l|cccccc"), digits=3, caption="Multinomial regression parameter estimate and Wald tests for each parameter.", label="tab:MultinomTab")
+@
+
+In Table \ref{tab:MultinomTab}, estimated regression parameters for the linear covariate, $t$, are all negative. As time grows there is a multiplicative reduction in the odds by 
+
+$$((e^{\hat{\beta}_{1,1}\cdot t},e^{\hat{\beta}_{1,2}\cdot t},e^{\hat{\beta}_{1,3}\cdot t},e^{\hat{\beta}_{1,4}\cdot t})=
+(\Sexpr{exp(Multinom_mod$coeff[2,1])}^t,\Sexpr{exp(Multinom_mod$coeff[2,2])}^t,\Sexpr{exp(Multinom_mod$coeff[2,3])}^t,\Sexpr{exp(Multinom_mod$coeff[2,4])}^t)$$
+
+for the four categories. The trend, among all categories, is that a rotavirus case becomes less likely to occur in the age-categories ''00-04'', ''05-09'', ''10-14'' and ''15-69'' as time progress. Thus it becomes more likely to occur in the age-category ''70+''. In Table \ref{tab:MultinomTab}, intercept of age-categories ''05-09'' and ''10-14'' is negative. All other things equal, the odds development over time shows that it is more likely that a rotavirus case is to occur in age-category ''70+'' than in ''05-09'' or ''10-14''. 
+The effects of the linear covariate are small compared to the harmonic components. As the rotavirus was most common among infants and young children \citep{Rotavirus}, the age-category of most interest is ''00-04''. Consider the following model
+
+\begin{center}
+\begin{equation}
+\log \left(\frac{\bm{\pi}_{00-04}(\bm{x}_t)}{\bm{\pi}_{70+}(\bm{x}_t)}\right) = \Sexpr{Multinom_mod$coeff[1,1]} \Sexpr{Multinom_mod$coeff[2,1]}t + \Sexpr{Multinom_mod$coeff[3,1]}\sin \left( \frac{2\pi}{12}\cdot t \right) + \Sexpr{Multinom_mod$coeff[4,1]}\cos\left( \frac{2\pi}{12}\cdot t\right) .
+\end{equation}
+\end{center}
+
+The odds of a reported case occuring in category ''00-04'' instead of ''70+'' is influenced by all covariates. As previously described, the linear covariate will determine the trend and the two harmonic covariates will show seasonality. In Figure \ref{fig:Oddsdevelop} the odds development over time are shown, with and without harmonic covariates. 
+%The estimated coefficients are not. The two that are relatively large are intercept for age-groups "00-04" and "15-69". 
+
+<<Oddsdevelop, echo=1:3, fig.cap=c("Odds for age category ''00-04'' plotted over time, grey area indicates values of odds less than one"), fig.pos="H", fig.height=4>>=
+beta_hat <- Multinom_mod$coeff
+Design_mat <- t(Multinom_mod$data$X)
+Odds <- exp(beta_hat[,1]%*%Design_mat) # choose category "00-04"
+linearOdds <- exp(c(beta_hat[1,1],beta_hat[2,1])%*%matrix(c(Design_mat[1,],Design_mat[2,]),ncol=144,byrow=TRUE))
+
+LTO <- which(Odds < 1) # which odds are less than one 
+v<- which(RotaVirusBB$time=="2009-01-01") 
+
+#####
+#Plot
+#####
+plot(RotaVirusBB$time,Odds, type="l", lty=2, lwd=1, ylab="Odds", xlab="Time (Months)")
+lines(RotaVirusBB$time, linearOdds, type="l", lty=1, lwd=2, ylab="Odds", xlab="Time (Months)")
+axis(1,at=as.numeric(RotaVirusBB$time),label=NA,tck=-0.01)
+abline(v=RotaVirusBB$time[v],col="black",lty=5, lwd=2)
+rect(RotaVirusBB$time[min(LTO)],0,RotaVirusBB$time[max(LTO)],max(Odds), border=NA, col=adjustcolor("grey60", alpha.f = 0.2))
+title("Multinomial logit regression, Development of odds over time")
+legend("bottomleft",legend=c("Odds without harmonic covariates", "Odds with harmonic covariates"), lty=c(1,2), lwd=c(2,1), pt.cex=1,cex=0.8)
+@
+
+Once again, the vertical line in \ref{fig:Oddsdevelop} indicates the recommendation of the vaccine. In \Sexpr{RotaVirusBB$time[min(LTO)]} the odds attain values below one. At this moment in time a reported virus case is more likely to appear in age-category ''70+'' than in category ''00-04''. 
+
+
+\section{Data analysis using the Dirichlet-multinomial regression}
+
+In section \ref{sec:DirmultinomREG}, we saw that the Dirichlet-multinomial regression model did not need to pursue a baseline category. Therefore, we have four more regression parameters in the following model
+\begin{equation}
+\bm{\pi}_{j}(\bm{x}_t)= \frac{\exp(\bm{\beta}_{j}\bm{x}_t)}{\sum_{k=1}^5 \exp(\bm{\beta}_k \bm{x}_t),}
+\end{equation}
+where $1 \leq j \leq 5$. We fit the Dirichlet-multinomial regression using the \textbf{MGLM} package
+<<Dirichletfit, echo=1:2, results='asis'>>=
+Dirichlet_mod <- MGLMreg(as.matrix(RotaVirusBB[,agNames])~t+sin+cos,
+        data=RotaVirusBB, dist="DM") 
+
+test2 <- do.call("cbind", list(Dirichlet_mod$coeff,Dirichlet_mod$test))
+xtable(test2, 
+       caption="Estimated coefficients of Dirichlet-multinomial model and Wald tests for regression parameters", align=c("l|ccccccc"), digits=3,label="tab:DirMultinomTab")
+@
+In Table \ref{tab:DirMultinomTab}, for age-category ''70+'', the sign of the coefficient representing the linear covariate, is positive. As time $t$ progress, it is more likely that a reported case occurs in age-category ''70+''. The two regression models show the same trend over time. As time progress it becomes more likely that rotavirus cases appear in category ''70+'' and less likely that it will appear in any other age-category. 
+
+The two regression models do not use the same link function so the estimates can not be compared directly. Using \textbf{R}'s \textit{predict} function, one can calculate the fitted mean values for the regression models. 
+
+In Figures \ref{fig:PlotMultinom_mod1}-\ref{fig:PlotMultinom_mod3} the fitted mean values are dispalyed, i.e. $\hat{\pi}_{jt}$ for $1 \leq t \leq 144$ where $j=$(''00-04'',''05-09'',''10-14'',''15-69'',''70+'').  
+
+<<PlotMultinom_mod, echo=1:2, fig.pos='H', fig.cap=c("Fitted mean values age-categories ''00-04'', ''05-09'' ''10-14'', ''15-69'' and  ''70+''"), fig.height=7>>=
+pred_Multinom <- predict(Multinom_mod, newdata=t(Design_mat))
+pred_dirich <- predict(Dirichlet_mod, newdata=t(Design_mat))
+
+grey <- adjustcolor("grey20", alpha.f = 0.9)
+Titles <- c("Fitted values for category ''00-04''","Fitted values for category ''05-09''","Fitted values for category ''10-14''","Fitted values for category ''15-69''","Fitted values for category ''70+''")
+Place <- c("bottomleft", NA, "topright", NA, "topleft")
+plotFit <- function() {
+  par(mfrow=c(2,1))
+    for (i in 1:(length((RotaVirusBB[,agNames])))) {
+        plot(RotaVirusBB$time, pred_Multinom[,i], type="l", ylim=c(0,max(RotaVirusBB[,agNames[i]]
+              /RotaVirusBB[,"totalAGs"])), lwd=2, lty=1,xlab="Time (months)", ylab="")
+         lines(RotaVirusBB$time, pred_dirich[,i], type="l", ylim=c(0,max(RotaVirusBB[,agNames[i]]/RotaVirusBB[,"totalAGs"])), lwd=2, lty=3,xlab="Time (months)", ylab="")
+        points(RotaVirusBB$time,RotaVirusBB[,agNames[i]]/RotaVirusBB[,"totalAGs"],lwd=1,
+             col=grey, pch=1)
+  axis(1,at=as.numeric(RotaVirusBB$time),label=NA,tck=-0.01)
+  title(Titles[i],cex.main=0.8 ,ylab="Proportions of RotaVirus cases and models fit", cex.lab=0.7)
+     if ((i==1|i==3|i==5)) {
+  legend(Place[i],legend=c("Multinomial logit regression", "Dirichlet-multinomial regression", "Propotions of reported rotavirus cases"), lty=c(1,3,NA), pch=c(NA,NA,1), border="black",pt.cex=1,cex=0.77, lwd=c(1,2,NA)) }
+   }
+}
+plotFit()
+@
+There are minor differences in fitted values in all age-categories. Both models suggests a  increase in the probability that a virus case will appear in category ''70+''. For this age-category the Dirichlet-multinomial suggest a smaller increase in the fitted mean values over time. The fitted values of age-categories ''05-09'' and ''10-14'' are small. The probability of a rotavirus case occuring in these age-categories are small throughout the whole period. The fitted values of the wide age-category ''15-69'' takes on values of almost equal size to the fitted values of age-category ''70+''. One could suggest that it is the width of the age-category ''15-69'' which is causing the large fitted values. 
+
+From this graphical presentation there little to say of which model fits data best. The goodness-of-fit measures AIC (\textit{Aikaikes information critera}) and BIC (\textit{Bayesian information criterion}) should give a indication on which model fits mean values more adequate. The two measures are defined as
+\begin{flalign*}
+AIC &= G^2-2\cdot \opn{df}\\
+BIC &= G^2- \log \opn{(df)}
+\end{flalign*}
+
+where $G^2=-2\log \Lambda$ is the likelihood-ratio statistic \citep[page 212-213]{A.Agresti}.
+<<AICBIC, results='asis'>>=
+AIC_BIC<- data.frame(x=matrix(c(Multinom_mod$AIC,Multinom_mod$BIC),ncol=1),y=matrix(c( Dirichlet_mod$AIC,Dirichlet_mod$BIC),ncol=1), row.names=c("AIC","BIC"))
+colnames(AIC_BIC) <- c("Multinomial regression", "Dirichlet-multinomial regression") 
+xtable(AIC_BIC, caption="Goodness-of-fit measures for the two regression models representing a tradeoff between fit and model complexity", 
+       align=c("l|cc"), label="AICBIC")
+@
+Both AIC and BIC represents a tradeoff between obtaining a good model while penalizing for the complexity of the model. AIC penalizes with two times the number of degrees of freedom (residual df or number of parameters) while BIC penalizes by $\log(n)$ times the residual df. The Dirichlet-multinomial will be penalized by 8 more units (AIC) or by $\Sexpr{log(4, base = exp(1))}$ more (BIC) as it has 4 more parameters. 
+In Table \ref{AICBIC} both AIC and BIC are approximately a thousand units lower for the Dirichlet-multinomial regression model. This implies that the Dirichlet-multinomial fitted mean values are closer to the mean values given data \citep[page 212]{A.Agresti}. 
+
+The models do achieve large differences in modeling the mean, confirmed in table \ref{AICBIC}. As a result of the different variance-covariance structure there should also be large differences in predicitve intervals (PI). Since it is not possible to find analytic closed form expressions for the pred. distributions, PI's are constructed by sampling. Using the asymptotic multivariate distribution for the maximum likelihood estimator \citep{MLE-dist-NOTIID} we can create a sampling algorithm. Once again, let $j$ representing the age-category. 
+\begin{table}[ht]
+\begin{tabular}{ll}
+& Sampling algorithm to obtain predictive distribution\\
+\hline
+1. & Sample $\bm{\beta} \sim \opn{MVN}(\bm{\hat{\beta}}, (-\bm{H})^{-1})$ \\
+2. & Calculate distribution parameters, i.e. $\bm{\pi}(\bm{\beta})$ or $\bm{\alpha}(\bm{\beta})$,\\
+& using their respective regression link (\eqref{linkMultnom} or \eqref{linkDir}) \\
+3. & Using the estimated parameters calculated in step 2 to sample $n_{tj}$, $t=1,...,144$ \\
+& and $j=1,...,5$ from $\opn{Multi}(N;\bm{\pi}(\bm{\beta}))$ or $\opn{Dirichlet-Multi}(N;\bm{\alpha}(\bm{\beta}))$\\
+4. & Calculate the proportions at time $t$, $P=n_{tj}/ \sum_{j=1}^J n_{tj}$.
+\end{tabular}\caption{Sampling algoritm which is implemented by the function \textit{MGLMpredInt}\label{tab:predAlgorithm}}
+\end{table}
+The function \textit{MGLMpredInt} is constructed so that it will implement the algorithm once. Using the \textbf{R} function \textit{replicate} we can sample repeated times. The PI quantiles are found using the \textbf{R} function \textit{quantile}.
+
+<<PredicitveInterval0004, echo=2:14, fig.cap="95 percent Predicitive intervals for multinomial and Dirichlet-multinomial, age category ''00-04''", fig.pos="H",fig.lp="fig:", fig.height=4.9>>=
+source('~/Desktop/Bachelor Multinomial time series modelling/ReportLayout 06052014/DataAnalysis-DirMultinom-timeseries/MGLM-Sampling-fun.R') # call: MGLMpredInt()
+
+N <- 1000 # Number of replicates. 
+
+New_propMultinom <- replicate(N,MGLMpredInt(Multinom_mod)) 
+New_propDirichlet <- replicate(N,MGLMpredInt(Dirichlet_mod))
+
+
+oneAGPI <- function(ageIndex, predictive) {
+ res <- matrix(apply(X= predictive[,ageIndex,],1, FUN=quantile, probs=c(0.025,0.975)),ncol=2, byrow=TRUE)
+ return(res)
+}
+
+ageInd <- c("00-04"=1,"05-09"=2,"10-14"=3, "15-69"=4,"70+"=5)
+piMulti <- lapply(ageInd, oneAGPI, predictive=New_propMultinom)
+piDirMulti <- lapply(ageInd, FUN=oneAGPI, predictive=New_propDirichlet)
+
+# Category 00-04 
+plot(RotaVirusBB$time, pred_Multinom[,1], type="l", ylim=c(0,1), lwd=1, lty=1,xlab="Time (months)", ylab="")
+ lines(RotaVirusBB$time, pred_dirich[,1], type="l", ylim=c(0,max(RotaVirusBB[,agNames[1]]/RotaVirusBB[,"totalAGs"])), lwd=1, lty=3,xlab="Time (months)", ylab="")
+points(RotaVirusBB$time,RotaVirusBB[,"00-04"]/RotaVirusBB[,"totalAGs"],lwd=1,col=grey, pch=1)
+
+lines(RotaVirusBB$time, piMulti$`00-04`[,1], lwd=2)
+lines(RotaVirusBB$time, piMulti$`00-04`[,2], lwd=2)
+polygon(c(RotaVirusBB$time,rev(RotaVirusBB$time)),c(piMulti$`00-04`[,2],rev(piMulti$`00-04`[,1])), col=adjustcolor("grey20", alpha.f = 0.3))
+
+lines(RotaVirusBB$time, piDirMulti$`00-04`[,1], lwd=2)
+lines(RotaVirusBB$time, piDirMulti$`00-04`[,2], lwd=2)  
+polygon(c(RotaVirusBB$time,rev(RotaVirusBB$time)),c(piDirMulti$`00-04`[,2],rev(piDirMulti$`00-04`[,1])), col=adjustcolor("grey20", alpha.f = 0.15))
+
+axis(1,at=as.numeric(RotaVirusBB$time),label=NA,tck=-0.01)
+title("Predicitive intervals")
+legend("bottomleft", legend=c("Dirichelt-multinomial predicitve interval","Multinomial predicitve interval"), col=c(adjustcolor("grey20", alpha.f = 0.15),adjustcolor("grey20", alpha.f = 0.3)), pch=c(22,22), pt.bg=c(adjustcolor("grey20", alpha.f = 0.15),adjustcolor("grey20", alpha.f = 0.3)),pt.cex=1)
+
+@
+  
+<<Predictiveinterval70, echo=FALSE, fig.cap="95 percent Predictive intervals  for multinomial and Dirichlet-multinomial, age category ''70+''",fig.pos="H",fig.lp="fig:", fig.height=4.9>>=
+# Plot prop and fit of age-category 70+
+plot(RotaVirusBB$time, pred_Multinom[,5], type="l", ylim=c(0,max(piDirMulti$`70+`[,2])), lwd=1, lty=1,xlab="Time (months)", ylab="")
+lines(RotaVirusBB$time, pred_dirich[,5], type="l", ylim=c(0,max(RotaVirusBB[,"70+"]/RotaVirusBB[,"totalAGs"])), lwd=1, lty=3,xlab="Time (months)", ylab="")
+points(RotaVirusBB$time,RotaVirusBB[,"70+"]/RotaVirusBB[,"totalAGs"],lwd=1,col=grey)
+# Multinom predInt
+lines(RotaVirusBB$time, piMulti$`70+`[,1], lwd=2)
+lines(RotaVirusBB$time, piMulti$`70+`[,2], lwd=2)
+polygon(c(RotaVirusBB$time,rev(RotaVirusBB$time)),c(piMulti$`70+`[,2],rev(piMulti$`70+`[,1])), col=adjustcolor("grey20", alpha.f = 0.3))
+# Dirichlet predInt
+lines(RotaVirusBB$time, piDirMulti$`70+`[,1], lwd=2)
+lines(RotaVirusBB$time, piDirMulti$`70+`[,2], lwd=2)  
+polygon(c(RotaVirusBB$time,rev(RotaVirusBB$time)),c(piDirMulti$`70+`[,2],rev(piDirMulti$`70+`[,1])), col=adjustcolor("grey20", alpha.f = 0.15))
+#esthetics and legend
+axis(1,at=as.numeric(RotaVirusBB$time),label=NA,tck=-0.01)
+title("Predicitive intervals")
+legend("topleft", legend=c("Dirichelt-multinomial predicitve interval","Multinomial predicitve interval"), col=c(adjustcolor("grey20", alpha.f = 0.15),adjustcolor("grey20", alpha.f = 0.3)), pch=c(22,22), pt.bg=c(adjustcolor("grey20", alpha.f = 0.15),adjustcolor("grey20", alpha.f = 0.3)),pt.cex=1)
+
+@
+Figure \ref{fig:PredicitveInterval0004} and \ref{fig:Predictiveinterval70} show two out of five age-categories. In the third step of the sampling algorithm, described in Table \ref{tab:predAlgorithm}, the sampled counts will inherit the distributions variance-covariance structure. The predictive intervals for the Dirichlet-multinomial will inherit the more flexible variance-covariance structure, described in chapter \ref{chap:DirMultinom}. As seen in Figures \ref{fig:PredicitveInterval0004} and \ref{fig:Predictiveinterval70} the predictive interval for the Dirichlet-multinomial is wider and contains more observations. For category ''70+'' the Diriclet-multinomial predictive interval includes $\Sexpr{round(length(subset(RotaVirusBB[,"70+"]/RotaVirusBB[,"totalAGs"],piDirMulti$`70+`[,1]<= RotaVirusBB[,"70+"]/RotaVirusBB[,"totalAGs"] & RotaVirusBB[,"70+"]/RotaVirusBB[,"totalAGs"]<=piDirMulti$`70+`[,2]))/length(RotaVirusBB[,"totalAGs"]), digits=2)}$\% where as the multinomial includes $\Sexpr{round(length(subset(RotaVirusBB[,"70+"]/RotaVirusBB[,"totalAGs"],piMulti$`70+`[,1]<= RotaVirusBB[,"70+"]/RotaVirusBB[,"totalAGs"]& RotaVirusBB[,"70+"]/RotaVirusBB[,"totalAGs"]<=piMulti$`70+`[,2]))/length(RotaVirusBB[,"totalAGs"]), digits=2)}$ \% of the observations. 
+For the younger age-category the predicitive interval for the Dirichlet-multinomial contain $\Sexpr{round(length(subset(RotaVirusBB[,"00-04"]/RotaVirusBB[,"totalAGs"],piDirMulti$`00-04`[,1]<= RotaVirusBB[,"00-04"]/RotaVirusBB[,"totalAGs"] & RotaVirusBB[,"00-04"]/RotaVirusBB[,"totalAGs"]<= piDirMulti$`00-04`[,2]))/length(RotaVirusBB[,"totalAGs"]), digits=2)}$ \% of the observations and the predictive interval for the multinomial contain $\Sexpr{round(length(subset(RotaVirusBB[,"00-04"]/RotaVirusBB[,"totalAGs"],piMulti$`00-04`[,1]<= RotaVirusBB[,"00-04"]/RotaVirusBB[,"totalAGs"]& RotaVirusBB[,"00-04"]/RotaVirusBB[,"totalAGs"]<=piMulti$`00-04`[,2]))/length(RotaVirusBB[,"totalAGs"]), digits=2)}$\%. 
+\end{document}

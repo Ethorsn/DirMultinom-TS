@@ -1,0 +1,136 @@
+\documentclass[a4paper,11pt,fleqn]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[section]{placeins}
+\usepackage[english]{babel}
+\usepackage[parfill]{parskip}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{subfig}
+
+\begin{document}
+
+<<knitr_option, cache=FALSE, echo=FALSE, results='hide'>>=
+library(knitr)
+
+## set global chunk options
+opts_chunk$set(echo=FALSE, fig.align='center',fig.show="asis", 
+               out.width="0.95\\textwidth", fig.height=6,
+               par=TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=56), warning=FALSE, error=FALSE)
+@
+
+<<R_lab,warning=FALSE>>= 
+#####
+# Libraries 
+#####
+library("RColorBrewer")
+library(plotrix)
+library(graphics)
+library(ggplot2)
+library(MGLM)
+@ 
+
+<<Data>>=
+source('Data i.o.R')
+@
+
+The data used in this study were acquired at the webpage \url{https://www3.rki.de/SurvStat/}.
+Data contains monthly reported rotavirus cases in the federal state of Brandenburg, Germany. A total of \Sexpr{sum(RotaVirusBB$totalAGs)} cases where reported in 2002-2013. The data is grouped in \Sexpr{dim(RotaVirusBB[,3:17])[2]} age categories, presented in Figure \ref{fig:BoxPlots}. With \Sexpr{dim(RotaVirusBB[,3:17])[2]} age categories and \Sexpr{dim(RotaVirusBB[,3:17])[1]} months of observation, i.e. \Sexpr{dim(RotaVirusBB[,3:17])[1]/12} years, a total of \Sexpr{sum(RotaVirusBB$totalAGs)} case reports are scattered over \Sexpr{dim(RotaVirusBB[,3:17])[1]*dim(RotaVirusBB[,3:17])[2]} cells. 
+
+In 2009, the state of Brandenburg introduced a recommendation of a vaccine against the rotavirus for infants and young children, in accordance with WHO  recommendations. The vaccine had been on the market since 2006 \citep{Rotavirus}. A decrease is seen in the total count of reported Rotavirus cases after 2009. Figure \ref{fig:TotalcountPlot} shows absolute value plotted over time.
+
+<<TotalcountPlot, fig.cap="Number of reported cases over time, vertical arrow indicates the recommendation of the vaccine by the state of Brandenburg", fig.pos="H",fig.env='figure', fig.height=5>>=
+#####
+# Plot, total counts over time 
+#####
+ v<- which(RotaVirusBB$time=="2009-01-01")
+plot(RotaVirusBB$time,RotaVirusBB$totalAGs, type="l",col="grey60",
+     xlab="Time (months)",ylab="Reported cases",lwd=2)
+   axis(1,at=as.numeric(RotaVirusBB$time),label=NA,tck=-0.01)
+arrows(x0=RotaVirusBB$time[v],y0=200,y1=0,col="black",lty=1, lwd=2)
+title("Absolute values of reported cases over time")
+@
+
+The vertical arrow in Figure \ref{fig:TotalcountPlot} indicates the introduction of the vaccine. Reported cases are seen to decrease after the introduction. However, an increase is shown in 2013. One also observes a large periodicity in data. In order to investigate the periodicity in our data we look upon the different years and how the cases are reported over the months. Note that a calendar year may be a insufficent period to properly show the periodicity. Peaks may occur at the start of each year. If so, maximas would be in the beginning or in the end of the calendar year. As a consequence, the graphical presentation would miss to display important information. Hence, a period of September to August is chosen. 
+
+<<MonthPlots, fig.cap="Subsequent periods of September to August. In our dataset, there is great seasonal variation." ,fig.pos="H",fig.lp="fig:", fig.height=7>>=
+col <- c(rep_len(c("grey30", "black", "grey40"), length.out=11))
+Type <- c(rep_len(c(1, 2, 3, 4), 11))
+par(mar = c(7.3, 4, 4, 2),new=FALSE)
+plotPeriod <- function() {
+    for (i in 1:(length(unique(RotaVirusBB[,1]))-1)) {
+      fun <- if (i==1) plot else lines
+        fun(1:12, subset(RotaVirusBB$totalAGs,
+         Begin.Date[i]<=RotaVirusBB$time & RotaVirusBB$time<=End.Date[i],
+          select=RotaVirusBB$TotalAGs),
+          lty=Type[i], type="l",
+          col=col[i],lwd=2, ylim=c(0,max(RotaVirusBB$totalAGs)),
+          ylab="No. reported cases, each period",xlab="",xaxt="n")
+  }
+  title("Numbers of reported rotavirus cases")
+  axis(1,tck=-0.01, label=FALSE,at=1:12)
+  staxlab(1,1:12 ,nlines=12, labels=Months, srt=45)
+}
+plotPeriod()
+par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), new = TRUE)
+plot.new()
+legend("bottom", legend=Periods ,col=col, lty=Type, lwd=2, bg="white", title="Periods",ncol=4, xpd=TRUE, )
+@
+
+<<MaxMin, fig.cap="Min max and meadian aggregated over months" ,fig.pos="H",fig.lp="fig:",fig.height=5>>=
+
+par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(5, 4, 4, 2), new = FALSE)
+plotTot <- function() {
+  plot(1:12, TotalAGs$med, lty=1, type="l",col="black",lwd=2,
+       ylim=c(0,max(RotaVirusBB$totalAGs)) ,
+       ylab="No. reported cases, each month",xlab="",xaxt="n")
+  lines(1:12, TotalAGs$ymin, lty=4, type="l", lwd=1)
+  lines(1:12, TotalAGs$ymax, lty=2, type="l", lwd=1)
+  title("Max, median and minimal value in each month")
+  axis(1,tck=-0.01, label=FALSE,at=1:12)
+  staxlab(1,1:12 ,nlines=12, labels=Months, srt=45)
+  legend("left", legend=c("Max","Median", "Min"), lty=c(2,1,4), lwd=2, bg="grey96", title="Lines",ncol=1, xpd=TRUE, border="white")
+}
+plotTot()
+@
+
+In Figure \ref{fig:MonthPlots}, most cases are located in the period from December to June. Once more, the three last periods from 2009-2013 contain less reported cases with the exception of a peak in April, 2013. The seasonal variation is strong. Comparing Figure \ref{fig:MonthPlots} with Figure \ref{fig:MaxMin} we can see that periods deviate  heavily from the median. In Figure \ref{fig:MaxMin}, the median is generally closer to the smallest value of reported cases and in off-season (July-November) there are less reported cases with a small range.
+
+There are \Sexpr{dim(RotaVirusBB[,3:17])[2]} age-categories. In Figure \ref{fig:BoxPlots} the age-categories are shown in a box-plot. The left box-plot shows the inital \Sexpr{dim(RotaVirusBB[,3:17])[2]} age-categories while as the right box-plot shows a reduced amount of age-categories. There are \Sexpr{dim(RotaVirusBB[,3:17])[1]} observations in each age-category.
+
+<<BoxPlots, fig.cap="Boxplots of age-categories in data. (left) all age-categories (right) reduced amount of age-categories \\ \textit{Note, age-categories do not have the same width.}", fig.pos='H', fig.lp="fig:", fig.height=5>>=
+par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(5, 4, 4, 2), new = FALSE)
+par(mfrow=c(1,2))
+boxplot(RotaVirusBB[,3:17], las=2, ylab="No. reported cases",ymax=c(0,800))
+title("All age-categories")
+boxplot(RotaVirusBB[,agNames], las=2, ylab="No. reported cases")
+title("Reduced age-categories")
+@
+Note that in Fig \ref{fig:BoxPlots} the groups do not have the same width. With this in mind, the reported cases in age-categories between 10 to 69 are not many. Most reported cases are in the categories ranging from 00-04 and age-category 70+ years. These groups have great spread. In the second (right) box-plot, data is aggregated to five age-categories. These seems to be sufficiently informative for our modeling purpose. The age-groups of most interest was young children, infants and elderly. Thus, the reduced amount of age-categories will not limit the analysis of an age-shift in reported cases.  \label{redGroups}
+In Fig. \ref{fig:TotalcountPlot} we saw a decrease in the total reported cases after 2009 followed by a increase in 2013. The recommendation of the vaccine only included children and infants. By looking upon the proportions, we may see if other age-categories may be affected by a decrease in age-category ''00-04''. It follows from the proportions characheristics, a decrease in a age-category implies a increase in another. In Fig \ref{fig:propPlots} the proportions of the reduced amount of age-categories are compared.
+
+<<propPlots, fig.lp="fig:", fig.cap="Proportions of reduced age-categories. Notice the age-shift betweeen age-category ''00-04'' and ''70+''.", fig.pos='H', fig.height=6>>=
+par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(5, 4, 4, 2), new = FALSE)
+pal <- c("black","grey20","grey20","grey20","grey10")
+Lwd <- c(2,1,1,1,2)
+LTY <- c(1,2,2,3,6)
+plotProp <- function() {
+  for (i in 1:length(agNames)) {
+    fun <- if (i==1) plot else lines
+    fun(RotaVirusBB$time,RotaVirusBB[,agNames[i]]/RotaVirusBB[,"totalAGs"], type="l",xlab="Time (months)",ylab="Proportion of reported cases", ylim=c(0,max(RotaVirusBB[,agNames]/RotaVirusBB[,"totalAGs"])),col=pal[i],lwd=Lwd[i], lty=LTY[i])
+  }
+  #Add legend
+  axis(1,at=as.numeric(RotaVirusBB$time),label=NA,tck=-0.01)
+  legend(x="left",agNames,col=pal,lty=c(1,2,3,4,5),lwd=Lwd,bg="white")
+  title("Proportions of reduced age-categories change over time")
+}
+
+plotProp()
+@
+
+In Figure \ref{fig:propPlots}, proportions of age-categories ''05-09'' and ''10-14'' are seen to have no change over time. The increase seen in age-category ''15-69'' is most likely because of the width of the category. There is a age-shift in proportions after the introduction of the recommendation of the vaccine. The decrease in age-category ''00-04'' is followed by an increase in the age-category ''70+''. 
+
+We have seen that the recommendation of the vaccine in 2009 caused a decrease in the total reported rotavirus cases, with the exception of a increase in 2013, Fig. \ref{fig:TotalcountPlot}. Most cases where reported in the season December to June. There was strong seasonal variation and some years peaks came later than usual. Using the reduced age-categories, presented in Fig. \ref{fig:BoxPlots}, we showed the proportions change over time in Fig. \ref{fig:propPlots}. The proportions of age-categories showed a age-shift between age-category ''00-04'' to ''70+''.
+
+To model the proportions we need to define the multinomial logit- and the Dirichlet-multinomial regression model. The next two chapters are used to derive the two regression models. 
+\end{document}
